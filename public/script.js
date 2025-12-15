@@ -58,6 +58,7 @@ location.href = 'login.html';
 };
 }
 
+
 const loginForm = document.getElementById('login');
 if (loginForm) {
 loginForm.onsubmit = async e => {
@@ -76,10 +77,54 @@ if (!div) return;
 div.innerHTML = '';
 posts.forEach(p => {
 const el = document.createElement('div');
-el.innerHTML = `<h3>${p.title}</h3><p>${p.content}</p><small>${p.username}</small>`;
+
+
+const canDelete = token && JSON.parse(atob(token.split('.')[1])).role === 'admin';
+
+
+el.innerHTML = `
+<h3>${p.title}</h3>
+<p>${p.content}</p>
+<small>${p.username}</small>
+${canDelete ? `<br><button onclick="deletePost(${p.id})">Удалить</button>` : ''}
+<div class="comments" id="comments-${p.id}"></div>
+${token ? `
+<input placeholder="Комментарий" id="comment-${p.id}">
+<button onclick="addComment(${p.id})">Отправить</button>
+` : ''}
+`;
+
+
+div.append(el);
+loadComments(p.id);
+});
+}
+
+async function deletePost(id) {
+await request(`/posts/${id}`, 'DELETE');
+loadPosts();
+}
+
+
+async function loadComments(postId) {
+const comments = await request(`/comments/${postId}`);
+const div = document.getElementById(`comments-${postId}`);
+div.innerHTML = '';
+comments.forEach(c => {
+const el = document.createElement('div');
+el.innerHTML = `<small><b>${c.username}</b>: ${c.content}</small>`;
 div.append(el);
 });
 }
+
+
+async function addComment(postId) {
+const input = document.getElementById(`comment-${postId}`);
+await request(`/comments/${postId}`, 'POST', { content: input.value });
+input.value = '';
+loadComments(postId);
+}
+
 
 async function addPost() {
 await request('/posts', 'POST', { title: title.value, content: content.value });

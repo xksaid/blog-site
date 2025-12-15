@@ -30,12 +30,13 @@ await pool.query('INSERT INTO users (username, password) VALUES ($1,$2)', [req.b
 res.sendStatus(201);
 });
 
+
 app.post('/api/login', async (req, res) => {
 const { rows } = await pool.query('SELECT * FROM users WHERE username=$1', [req.body.username]);
 if (!rows[0]) return res.sendStatus(401);
 const ok = await bcrypt.compare(req.body.password, rows[0].password);
 if (!ok) return res.sendStatus(401);
-const token = jwt.sign({ id: rows[0].id, username: rows[0].username }, SECRET);
+const token = jwt.sign({ id: rows[0].id, username: rows[0].username, role: rows[0].role }, SECRET);
 res.json({ token });
 });
 
@@ -50,6 +51,16 @@ res.json(rows);
 });
 
 
+app.get('/api/comments/:postId', async (req, res) => {
+const { rows } = await pool.query(
+`SELECT comments.*, users.username
+FROM comments JOIN users ON users.id = comments.user_id
+WHERE post_id=$1 ORDER BY created_at`,
+[req.params.postId]
+);
+res.json(rows);
+});
+
 app.post('/api/posts', auth, async (req, res) => {
 await pool.query(
 'INSERT INTO posts (user_id, title, content) VALUES ($1,$2,$3)',
@@ -58,14 +69,19 @@ await pool.query(
 res.sendStatus(201);
 });
 
-
 app.delete('/api/posts/:id', auth, async (req, res) => {
-await pool.query(
-'DELETE FROM posts WHERE id=$1 AND user_id=$2',
-[req.params.id, req.user.id]
-);
-res.sendStatus(200);
+  if (req.user.role !== 'admin') {
+    return res.sendStatus(403);
+  }
+
+  await pool.query(
+    'DELETE FROM posts WHERE id=$1',
+    [req.params.id]
+  );
+
+  res.sendStatus(200);
 });
+
 
 
 app.post('/api/comments/:postId', auth, async (req, res) => {
@@ -75,6 +91,5 @@ await pool.query(
 );
 res.sendStatus(201);
 });
-
 
 app.listen(3000);
