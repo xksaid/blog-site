@@ -1,6 +1,19 @@
 const API = '/api';
 const token = localStorage.getItem('token');
 
+function showNotification(text, type = 'success') {
+  const n = document.getElementById('notification');
+  if (!n) return;
+
+  n.textContent = text;
+  n.className = `notification ${type}`;
+  n.style.display = 'block';
+
+  setTimeout(() => {
+    n.style.display = 'none';
+  }, 2500);
+}
+
 
 // загрузка header
 fetch('header.html')
@@ -37,36 +50,98 @@ location.href = 'login.html';
 
 
 async function request(url, method='GET', body) {
-const res = await fetch(API + url, {
-method,
-headers: {
-'Content-Type': 'application/json',
-...(token && { Authorization: token })
-},
-body: body && JSON.stringify(body)
-});
-return res.json();
+  const res = await fetch(API + url, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: token })
+    },
+    body: body && JSON.stringify(body)
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(data.message || 'Ошибка запроса');
+  }
+
+  return data;
+}
+
+function validatePasswordClient(password) {
+  if (password.length < 6) {
+    return 'Пароль должен быть не короче 6 символов';
+  }
+  if (!/\d/.test(password)) {
+    return 'Пароль должен содержать хотя бы одну цифру';
+  }
+  return null;
 }
 
 
 const reg = document.getElementById('register');
 if (reg) {
 reg.onsubmit = async e => {
-e.preventDefault();
-await request('/register', 'POST', { username: username.value, password: password.value });
-location.href = 'login.html';
+  e.preventDefault();
+
+  const passwordError = validatePasswordClient(password.value);
+  if (passwordError) {
+    showNotification(passwordError, 'error');
+    return;
+  }
+
+  try {
+    await request('/register', 'POST', {
+      username: username.value,
+      password: password.value
+    });
+
+    showNotification('Регистрация прошла успешно ✅');
+
+    setTimeout(() => {
+      location.href = 'login.html';
+    }, 2000);
+  } catch (err) {
+    showNotification(err.message, 'error');
+  }
 };
+
+
 }
 
 
 const loginForm = document.getElementById('login');
 if (loginForm) {
 loginForm.onsubmit = async e => {
-e.preventDefault();
-const r = await request('/login', 'POST', { username: username.value, password: password.value });
-localStorage.setItem('token', r.token);
-location.href = 'posts.html';
+  e.preventDefault();
+
+  try {
+    const r = await request('/login', 'POST', {
+      username: username.value,
+      password: password.value
+    });
+
+    localStorage.setItem('token', r.token);
+    showNotification('Вход выполнен успешно ✅');
+
+    setTimeout(() => {
+      location.href = 'posts.html';
+    }, 1500);
+  } catch {
+    showNotification('Неверный логин или пароль', 'error');
+  }
 };
+
+}
+
+async function toggleLike(postId) {
+  if (!token) {
+    showNotification('Войдите, чтобы ставить лайки', 'error');
+    return;
+  }
+
+  await request(`/posts/${postId}/like`, 'POST');
+  loadPosts();
 }
 
 
@@ -86,6 +161,9 @@ el.innerHTML = `
 <h3>${p.title}</h3>
 <p>${p.content}</p>
 <small>${p.username}</small>
+<div>
+    <button onclick="toggleLike(${p.id})">❤️ ${p.likes}</button>
+  </div>
 ${canDelete ? `<br><button onclick="deletePost(${p.id})">Удалить</button>` : ''}
 <div class="comments" id="comments-${p.id}"></div>
 ${token ? `
