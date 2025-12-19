@@ -24,11 +24,73 @@ res.sendStatus(403);
 }
 }
 
+function validatePassword(password) {
+  if (password.length < 6) {
+    return 'Пароль должен быть не короче 6 символов';
+  }
+  if (!/\d/.test(password)) {
+    return 'Пароль должен содержать хотя бы одну цифру';
+  }
+  return null;
+}
+
+
 app.post('/api/register', async (req, res) => {
-const hash = await bcrypt.hash(req.body.password, 10);
-await pool.query('INSERT INTO users (username, password) VALUES ($1,$2)', [req.body.username, hash]);
-res.sendStatus(201);
+  const { username, password } = req.body;
+
+  const passwordError = validatePassword(password);
+  if (passwordError) {
+    return res.status(400).json({ message: passwordError });
+  }
+
+  const exists = await pool.query(
+    'SELECT 1 FROM users WHERE username = $1',
+    [username]
+  );
+
+  if (exists.rows.length > 0) {
+    return res.status(409).json({
+      message: 'Пользователь с таким именем уже существует'
+    });
+  }
+
+  const hash = await bcrypt.hash(password, 10);
+
+  await pool.query(
+    'INSERT INTO users (username, password) VALUES ($1,$2)',
+    [username, hash]
+  );
+
+  res.status(201).json({ message: 'User registered' });
 });
+
+
+app.post('/api/posts/:id/like', auth, async (req, res) => {
+  const postId = req.params.id;
+
+  const exists = await pool.query(
+    'SELECT 1 FROM likes WHERE user_id=$1 AND post_id=$2',
+    [req.user.id, postId]
+  );
+
+  if (exists.rows.length > 0) {
+    // убираем лайк
+    await pool.query(
+      'DELETE FROM likes WHERE user_id=$1 AND post_id=$2',
+      [req.user.id, postId]
+    );
+    return res.json({ liked: false });
+  }
+
+  // ставим лайк
+  await pool.query(
+    'INSERT INTO likes (user_id, post_id) VALUES ($1,$2)',
+    [req.user.id, postId]
+  );
+
+  res.json({ liked: true });
+});
+
 
 
 app.post('/api/login', async (req, res) => {
@@ -43,9 +105,15 @@ res.json({ token });
 
 app.get('/api/posts', async (req, res) => {
 const { rows } = await pool.query(
-`SELECT posts.*, users.username
-FROM posts JOIN users ON users.id = posts.user_id
-ORDER BY created_at DESC`
+`SELECT 
+  posts.*,
+  users.username,
+  COUNT(likes.post_id) AS likes
+FROM posts
+JOIN users ON users.id = posts.user_id
+LEFT JOIN likes ON likes.post_id = posts.id
+GROUP BY posts.id, users.username
+ORDER BY posts.created_at DESC`
 );
 res.json(rows);
 });
